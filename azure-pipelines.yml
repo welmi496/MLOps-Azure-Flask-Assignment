@@ -1,0 +1,72 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  pythonVersion: "3.11"
+  azureServiceConnection: "YOUR-ARM-SERVICE-CONNECTION"
+  webAppName: "YOUR-APP-NAME"
+  vmImageName: "ubuntu-latest"
+
+stages:
+  - stage: BuildTest
+    displayName: Build and test
+    jobs:
+      - job: Quality
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: $(pythonVersion)
+          - script: |
+              python -m venv .venv
+              source .venv/bin/activate
+              python -m pip install --upgrade pip
+              pip install -r requirements-dev.txt
+              flake8 app.py train.py tests
+              pytest -q --junitxml=test-results.xml
+            displayName: Install lint and test
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: test-results.xml
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: $(Build.SourcesDirectory)
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/app.zip
+              replaceExistingArchive: true
+          - publish: $(Build.ArtifactStagingDirectory)/app.zip
+            artifact: flask-app
+
+  - stage: Deploy
+    displayName: Deploy to Azure App Service
+    dependsOn: BuildTest
+    condition: succeeded()
+    jobs:
+      - deployment: DeployWebApp
+        environment: production
+        pool:
+          vmImage: $(vmImageName)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: flask-app
+                - task: AzureWebApp@1
+                  inputs:
+                    azureSubscription: $(azureServiceConnection)
+                    appType: webAppLinux
+                    appName: $(webAppName)
+                    package: $(Pipeline.Workspace)/flask-app/app.zip
+                    startUpCommand: gunicorn --bind=0.0.0.0:8000 app:app
