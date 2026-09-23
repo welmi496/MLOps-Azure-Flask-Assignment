@@ -27,4 +27,4 @@ jobs:
       - name: Unit tests
         run: |
           source .venv/bin/activate
-          pytest -q
+          PYTHONPATH=. python -m pytest -q

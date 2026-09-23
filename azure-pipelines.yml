@@ -31,7 +31,7 @@ stages:
               python -m pip install --upgrade pip
               pip install -r requirements-dev.txt
               flake8 app.py train.py tests
-              pytest -q --junitxml=test-results.xml
+              PYTHONPATH=. python -m pytest -q --junitxml=test-results.xml
             displayName: Install lint and test
           - task: PublishTestResults@2
             condition: succeededOrFailed()
